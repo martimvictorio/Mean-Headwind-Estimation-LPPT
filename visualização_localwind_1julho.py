@@ -75,6 +75,7 @@ def extrair_hora_minuto_msg(msg):
 def mensagem_cumpre_requisitos_grafico(msg, qnh_local, temp_local_celsius):
     """
     Aplica os filtros espaciais e calcula a altitude verdadeira e a distância.
+    Atualizado para considerar o true bearing da pista como 22.72°.
     """
     try:
         campos_obrigatorios = ['x', 'y', 'baroH', 'vx', 'vy']
@@ -88,8 +89,11 @@ def mensagem_cumpre_requisitos_grafico(msg, qnh_local, temp_local_celsius):
 
         # Distância Euclidiana e Distância Projetada
         distancia_euclidiana_nm = math.sqrt((x - X_THR)**2 + (y - Y_THR)**2) / M_PARA_NM
-        rad_205 = math.radians(205)
-        distancia_projetada_nm = ((x - X_THR) * math.sin(rad_205) + (y - Y_THR) * math.cos(rad_205)) / M_PARA_NM
+        
+        # 1. ATUALIZAÇÃO DO ÂNGULO PROJETADO
+        # A orientação da pista é 22.72°. A aproximação faz-se no sentido oposto: 180° + 22.72° = 202.72°
+        rad_202_72 = math.radians(202.72)
+        distancia_projetada_nm = ((x - X_THR) * math.sin(rad_202_72) + (y - Y_THR) * math.cos(rad_202_72)) / M_PARA_NM
 
         # Cálculo da Altitude Verdadeira (Termodinâmica)
         h_p_ft = baroH * 100 
@@ -104,13 +108,20 @@ def mensagem_cumpre_requisitos_grafico(msg, qnh_local, temp_local_celsius):
 
         # Filtros espaciais
         if not (0 < distancia_euclidiana_nm < 11.3): return False, distancia_projetada_nm, h_real
+        
         bearing = math.degrees(math.atan2(x - X_THR, y - Y_THR))
         if bearing < 0: bearing += 360
-        if not (200 <= bearing <= 210): return False, distancia_projetada_nm, h_real
+        
+        # 2. ATUALIZAÇÃO DO FILTRO DE BEARING (202.72° +/- 5°)
+        if not (197.72 <= bearing <= 207.72): return False, distancia_projetada_nm, h_real
+        
         if not (330 < h_real < 4000): return False, distancia_projetada_nm, h_real
+        
         chi_g = math.degrees(math.atan2(vx, vy))
         if chi_g < 0: chi_g += 360
-        if not (20 < chi_g < 30): return False, distancia_projetada_nm, h_real
+        
+        # 3. ATUALIZAÇÃO DO FILTRO DE TRACK ANGLE (22.72° +/- 5°)
+        if not (17.72 < chi_g < 27.72): return False, distancia_projetada_nm, h_real
 
         return True, distancia_projetada_nm, h_real
 
@@ -212,9 +223,9 @@ def gerar_graficos_vento(caminho_csv, caminho_metar, dia_alvo):
     plt.scatter(distancias_vento, valores_vento, color='dodgerblue', s=8, alpha=0.6, label='Observed Headwind')
     plt.axvline(x=11.3, color='purple', linestyle='--', label='Intermediate Fix (11.3 NM)')
     plt.axvline(x=0, color='black', linestyle='-', alpha=0.5, label='Runway Threshold')
-    plt.axhline(y=0, color='red', linestyle='-', alpha=0.3) # Linha de vento zero
+    plt.axhline(y=0, color='red', linestyle='-', alpha=0.3) 
     
-    plt.xlim(12, -1) # Invertido para simular a aproximação
+    plt.xlim(12, -1) 
     plt.title("Headwind Profile along Final Approach", fontweight='bold')
     plt.xlabel("Distance to Threshold (NM)")
     plt.ylabel("Calculated Headwind (kt)")

@@ -80,6 +80,7 @@ def convert_to_seconds(tod_str):
 def message_meets_requirements(msg, qnh_local, temp_local_celsius):
     """
     Applies spatial filters and accurately corrects the barometric altitude.
+    UPDATED: Runway true bearing is 22.72º.
     """
     try:
         campos_obrigatorios = ['x', 'y', 'baroH', 'vx', 'vy', 'trkNr']
@@ -93,8 +94,10 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
 
         distancia_euclidiana_nm = math.sqrt((x - X_THR)**2 + (y - Y_THR)**2) / M_PARA_NM
         
-        rad_205 = math.radians(205)
-        distancia_projetada_nm = ((x - X_THR) * math.sin(rad_205) + (y - Y_THR) * math.cos(rad_205)) / M_PARA_NM
+        # 1. ATUALIZAÇÃO DO ÂNGULO DA PISTA
+        # Aproximação a 180º + 22.72º = 202.72º
+        rad_202_72 = math.radians(202.72)
+        distancia_projetada_nm = ((x - X_THR) * math.sin(rad_202_72) + (y - Y_THR) * math.cos(rad_202_72)) / M_PARA_NM
 
         if distancia_euclidiana_nm > 15:
             return False, "Outside sector", True
@@ -104,7 +107,9 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
 
         bearing = math.degrees(math.atan2(x - X_THR, y - Y_THR))
         if bearing < 0: bearing += 360
-        if not (200 <= bearing <= 210):
+        
+        # 2. ATUALIZAÇÃO DO FILTRO DE BEARING (Margem de +/- 5º do ângulo de aproximação)
+        if not (197.72 <= bearing <= 207.72):
             return False, f"Bearing = {bearing:.1f}º", False
 
         h_p_ft = baroH * 100 
@@ -124,7 +129,9 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
 
         chi_g = math.degrees(math.atan2(vx, vy))
         if chi_g < 0: chi_g += 360
-        if not (20 < chi_g < 30):
+        
+        # 3. ATUALIZAÇÃO DO FILTRO DE TRACK ANGLE (Margem de +/- 5º do ângulo da pista)
+        if not (17.72 < chi_g < 27.72):
             return False, f"Track = {chi_g:.1f}º", False
 
         resultado_sucesso = {

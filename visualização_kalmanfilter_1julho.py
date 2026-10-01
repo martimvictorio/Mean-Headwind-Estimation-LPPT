@@ -36,9 +36,11 @@ class FiltroKalman:
         self.Kw = Kw
         
     def predict(self):
+        # Forecast Step: Adição do process noise (Q) para refletir a variação temporal
         self.P = self.P + self.Q
 
     def estimar_vento_altitude(self, alt_true):
+        # Interpolação linear para obter o vento estimado a uma determinada altitude real
         idx = np.searchsorted(self.bins, alt_true) - 1
         idx_inf = max(0, min(idx, self.n - 2))
         idx_sup = idx_inf + 1
@@ -48,6 +50,7 @@ class FiltroKalman:
         return (w_inf * self.x[idx_inf, 0]) + (w_sup * self.x[idx_sup, 0])
 
     def update(self, observacoes):
+        # Analysis Step: Atualização do vetor de estados com base em novas medições
         m = len(observacoes)
         if m == 0: return
         H = np.zeros((m, self.n))
@@ -60,11 +63,16 @@ class FiltroKalman:
             idx_inf = max(0, min(idx, self.n - 2))
             idx_sup = idx_inf + 1
             h_inf, h_sup = self.bins[idx_inf], self.bins[idx_sup]
+            
+            # Cálculo dos pesos para os bins vizinhos
             w_inf = max(0.0, min(1.0, (h_sup - alt_true) / (h_sup - h_inf)))
             w_sup = max(0.0, min(1.0, (alt_true - h_inf) / (h_sup - h_inf)))
             H[i, idx_inf], H[i, idx_sup] = w_inf, w_sup
+            
+            # A variância do erro instrumental cresce com a distância à trajetória
             R[i, i] = self.R0 + (self.Kw * dist_nm)
 
+        # Ganho de Kalman e atualização de matrizes
         S = np.dot(H, np.dot(self.P, H.T)) + R
         try: K = np.dot(np.dot(self.P, H.T), np.linalg.inv(S))
         except np.linalg.LinAlgError: return
@@ -129,21 +137,30 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
         campos = ['x', 'y', 'baroH', 'vx', 'vy', 'trkNr']
         if any(not msg.get(c) or str(msg[c]).strip() == '' for c in campos): return False, None
         
-        x, y, baroH, vx, vy = float(msg['x']), float(msg['y']), float(msg['baroH']), float(msg['vx']), float(msg['vy'])
+        x, y = float(msg['x']), float(msg['y'])
+        baroH = float(msg['baroH'])
+        vx, vy = float(msg['vx']), float(msg['vy'])
+        
+        # Filtro 1: Distância entre a aeronave e a cabeceira (0 a 11.3 NM)
         dist_nm = math.sqrt((x - X_THR)**2 + (y - Y_THR)**2) / M_PARA_NM
         if not (0 < dist_nm < 11.3): return False, None
             
+        # Filtro 2: Bearing relativo baseado no novo true bearing da pista (22.72º) + 180º = 202.72º
+        # Limites definidos considerando tolerância de ±5 graus.
         bearing = (math.degrees(math.atan2(x - X_THR, y - Y_THR)) + 360) % 360
-        if not (200 <= bearing <= 210): return False, None
+        if not (197.72 <= bearing <= 207.72): return False, None
 
+        # Filtro 3: Limites de altitude (330 a 4000 ft MSL)
         p = P_ISA * (1 + (LAMBDA_ISA * (baroH * 100 * FT_PARA_M)) / T_ISA) ** (-G0 / (LAMBDA_ISA * R_GAS))
         h_real = ((temp_local_celsius + 273.15) / LAMBDA_ISA) * ((p / qnh_local) ** (-(LAMBDA_ISA * R_GAS) / G0) - 1) / FT_PARA_M
         if not (330 < h_real < 4000): return False, None
 
+        # Filtro 4: Track Angle limitante baseado no novo bearing da pista (22.72º ± 5º)
         chi_g = (math.degrees(math.atan2(vx, vy)) + 360) % 360
-        if not (20 < chi_g < 30): return False, None
+        if not (17.72 <= chi_g <= 27.72): return False, None
 
-        dist_proj_nm = ((x - X_THR) * math.sin(math.radians(205)) + (y - Y_THR) * math.cos(math.radians(205))) / M_PARA_NM
+        # Cálculo da distância projetada no eixo da pista ajustado ao novo rumo (202.72º)
+        dist_proj_nm = ((x - X_THR) * math.sin(math.radians(202.72)) + (y - Y_THR) * math.cos(math.radians(202.72))) / M_PARA_NM
         return True, {'altitude': h_real, 'distancia_proj': dist_proj_nm}
     except ValueError:
         return False, None
@@ -395,9 +412,9 @@ if __name__ == "__main__":
     dia_alvo = "01"
     
     # AFINAÇÃO DOS PARÂMETROS
-    Kw_teste = 1 #Alterar entre 0 e 1 não alterou nada porque a distância da aeronave ao glide path é muito pouco.
-    R0_teste = 34.0  # O valor padrão derivado da literatura (3 m/s) é 34.0.
+    Kw_teste = 1 
+    R0_teste = 34.0  
 
-    Q_teste = 0.03 #Esta variável é a que se tentou alterar. 0.3 é o valor ótimo. 
+    Q_teste = 0.03 
     
     run_and_visualise(nome_do_ficheiro_csv, nome_do_ficheiro_metar, dia_alvo, Kw_teste, Q_teste, R0_teste)

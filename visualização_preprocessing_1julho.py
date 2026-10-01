@@ -121,20 +121,20 @@ def mensagem_cumpre_requisitos_grafico(msg, qnh_local, temp_local_celsius):
         if not (0 < distancia_euclidiana_nm < 11.3):
             return False, x, y, distancia_projetada_nm, h_real, trk_nr
 
-        # Filtro 2: Azimute Aeronáutico (200º a 210º)
+        # Filtro 2: Azimute Aeronáutico (197.72º a 207.72)
         bearing = math.degrees(math.atan2(x - X_THR, y - Y_THR))
         if bearing < 0: bearing += 360
-        if not (200 <= bearing <= 210):
+        if not (197.72 <= bearing <= 207.72):
             return False, x, y, distancia_projetada_nm, h_real, trk_nr
 
         # Filtro 3: Altitude Real (330 ft a 4000 ft)
         if not (330 < h_real < 4000):
             return False, x, y, distancia_projetada_nm, h_real, trk_nr
 
-        # Filtro 4: Track Angle (20º a 30º)
+        # Filtro 4: Track Angle (17.72º a 27.72º)
         chi_g = math.degrees(math.atan2(vx, vy))
         if chi_g < 0: chi_g += 360
-        if not (20 < chi_g < 30):
+        if not (17.72 < chi_g < 27.72):
             return False, x, y, distancia_projetada_nm, h_real, trk_nr
 
         return True, x, y, distancia_projetada_nm, h_real, trk_nr

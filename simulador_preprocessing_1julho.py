@@ -112,10 +112,10 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
         if not (0 < distancia_euclidiana_nm < 11.3):
             return False, f"Distance = {distancia_euclidiana_nm:.1f} NM", False
 
-        # 2. Bearing constraint (200º to 210º)
+        # 2. Bearing constraint (197.72º to 207.72º)
         bearing = math.degrees(math.atan2(x - X_THR, y - Y_THR))
         if bearing < 0: bearing += 360
-        if not (200 <= bearing <= 210):
+        if not (197.72 <= bearing <= 207.72):
             return False, f"Bearing = {bearing:.1f}º", False
 
         # 3. Exact True Altitude Calculation (Thermodynamic Equations)
@@ -135,10 +135,10 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
         if not (330 < h_real < 4000):
             return False, f"Corrected altitude = {h_real:.1f} ft", False
 
-        # 4. Track Angle constraint (20º to 30º)
+        # 4. Track Angle constraint (17.72º to 27.72º)
         chi_g = math.degrees(math.atan2(vx, vy))
         if chi_g < 0: chi_g += 360
-        if not (20 < chi_g < 30):
+        if not (17.72 < chi_g < 27.72):
             return False, f"Track = {chi_g:.1f}º", False
 
         resultado_sucesso = {
