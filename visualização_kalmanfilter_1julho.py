@@ -16,7 +16,8 @@ P_ISA = 1013.25
 T_ISA = 288.15       
 LAMBDA_ISA = -0.0065 
 R_GAS = 287.05287    
-G0 = 9.80665         
+G0 = 9.80665
+TRUE_BEARING_RWY02 = 22.72 # Rumo verdadeiro da pista 02 (graus)
 
 # ==========================================
 # MODELO 1: FILTRO DE KALMAN
@@ -24,23 +25,21 @@ G0 = 9.80665
 class FiltroKalman:
     """
     Filtro de Kalman Linear 1D para o Perfil Vertical de Vento.
-    Agora inclui a capacidade de parametrizar a variância instrumental base (R0_val).
+    Inclui inicialização com vento de superfície e atualização dinâmica aos 330 ft.
     """
-    def __init__(self, R0_val=34.0, P0_val=1156.0, Kw=0.5, Q_val=0.05):
+    def __init__(self, vento_inicial_kt, R0_val=34.0, P0_val=1156.0, Kw=0.5, Q_val=0.05):
         self.bins = np.linspace(330, 4000, 37)
         self.n = len(self.bins)
-        self.x = np.zeros((self.n, 1))
+        self.x = np.full((self.n, 1), vento_inicial_kt)
         self.P = np.eye(self.n) * P0_val
         self.Q = np.eye(self.n) * Q_val 
         self.R0 = R0_val 
         self.Kw = Kw
         
     def predict(self):
-        # Forecast Step: Adição do process noise (Q) para refletir a variação temporal
         self.P = self.P + self.Q
 
     def estimar_vento_altitude(self, alt_true):
-        # Interpolação linear para obter o vento estimado a uma determinada altitude real
         idx = np.searchsorted(self.bins, alt_true) - 1
         idx_inf = max(0, min(idx, self.n - 2))
         idx_sup = idx_inf + 1
@@ -50,7 +49,6 @@ class FiltroKalman:
         return (w_inf * self.x[idx_inf, 0]) + (w_sup * self.x[idx_sup, 0])
 
     def update(self, observacoes):
-        # Analysis Step: Atualização do vetor de estados com base em novas medições
         m = len(observacoes)
         if m == 0: return
         H = np.zeros((m, self.n))
@@ -64,30 +62,31 @@ class FiltroKalman:
             idx_sup = idx_inf + 1
             h_inf, h_sup = self.bins[idx_inf], self.bins[idx_sup]
             
-            # Cálculo dos pesos para os bins vizinhos
             w_inf = max(0.0, min(1.0, (h_sup - alt_true) / (h_sup - h_inf)))
             w_sup = max(0.0, min(1.0, (alt_true - h_inf) / (h_sup - h_inf)))
             H[i, idx_inf], H[i, idx_sup] = w_inf, w_sup
             
-            # A variância do erro instrumental cresce com a distância à trajetória
             R[i, i] = self.R0 + (self.Kw * dist_nm)
 
-        # Ganho de Kalman e atualização de matrizes
         S = np.dot(H, np.dot(self.P, H.T)) + R
         try: K = np.dot(np.dot(self.P, H.T), np.linalg.inv(S))
         except np.linalg.LinAlgError: return
         e = y - np.dot(H, self.x)
         self.x = self.x + np.dot(K, e)
         self.P = np.dot((np.eye(self.n) - np.dot(K, H)), self.P)
+        
+    def update_vento_superficie(self, vento_kt):
+        """Atualiza o valor do vento exclusivamente na altitude de 330 pés (índice 0)"""
+        self.x[0, 0] = vento_kt
 
 # ==========================================
 # MODELO 2: BASELINE (Zero-Order Hold)
 # ==========================================
 class ModeloBaseline:
-    def __init__(self):
+    def __init__(self, vento_inicial_kt):
         self.bins = np.linspace(330, 4000, 37)
         self.n = len(self.bins)
-        self.x = np.zeros((self.n, 1)) 
+        self.x = np.full((self.n, 1), vento_inicial_kt)
         
     def estimar_vento_altitude(self, alt_true):
         idx = np.searchsorted(self.bins, alt_true) - 1
@@ -102,6 +101,10 @@ class ModeloBaseline:
         for alt_true, vento_kt, _ in observacoes:
             idx = (np.abs(self.bins - alt_true)).argmin()
             self.x[idx, 0] = vento_kt
+            
+    def update_vento_superficie(self, vento_kt):
+        """Atualiza o valor do vento exclusivamente na altitude de 330 pés (índice 0)"""
+        self.x[0, 0] = vento_kt
 
 # ==========================================
 # PRE-PROCESSING FUNCTIONS
@@ -119,9 +122,23 @@ def carregar_cronograma_metar_em_segundos(caminho_metar, dia_alvo):
 def process_metar(metar_str):
     match_qnh = re.search(r'Q(\d{4})', metar_str)
     qnh = float(match_qnh.group(1)) if match_qnh else P_ISA
+    
     match_temp = re.search(r'\b(M?\d{2})/(M?\d{2})\b', metar_str)
     temp_celsius = float(match_temp.group(1).replace('M', '-')) if match_temp else 15.0
-    return qnh, temp_celsius
+    
+    match_wind = re.search(r'\b(\d{3}|VRB)(\d{2,3})(?:G\d{2,3})?KT\b', metar_str)
+    headwind = 0.0
+    if match_wind:
+        dir_str = match_wind.group(1)
+        speed = float(match_wind.group(2))
+        if dir_str != 'VRB':
+            wind_dir = float(dir_str)
+            delta_theta = math.radians(wind_dir - TRUE_BEARING_RWY02)
+            headwind = speed * math.cos(delta_theta)
+        else:
+            headwind = 0.0
+            
+    return qnh, temp_celsius, headwind
 
 def convert_to_seconds(msg):
     tod_str = msg.get('tod')
@@ -141,25 +158,19 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
         baroH = float(msg['baroH'])
         vx, vy = float(msg['vx']), float(msg['vy'])
         
-        # Filtro 1: Distância entre a aeronave e a cabeceira (0 a 11.3 NM)
         dist_nm = math.sqrt((x - X_THR)**2 + (y - Y_THR)**2) / M_PARA_NM
         if not (0 < dist_nm < 11.3): return False, None
             
-        # Filtro 2: Bearing relativo baseado no novo true bearing da pista (22.72º) + 180º = 202.72º
-        # Limites definidos considerando tolerância de ±5 graus.
         bearing = (math.degrees(math.atan2(x - X_THR, y - Y_THR)) + 360) % 360
         if not (197.72 <= bearing <= 207.72): return False, None
 
-        # Filtro 3: Limites de altitude (330 a 4000 ft MSL)
         p = P_ISA * (1 + (LAMBDA_ISA * (baroH * 100 * FT_PARA_M)) / T_ISA) ** (-G0 / (LAMBDA_ISA * R_GAS))
         h_real = ((temp_local_celsius + 273.15) / LAMBDA_ISA) * ((p / qnh_local) ** (-(LAMBDA_ISA * R_GAS) / G0) - 1) / FT_PARA_M
         if not (330 < h_real < 4000): return False, None
 
-        # Filtro 4: Track Angle limitante baseado no novo bearing da pista (22.72º ± 5º)
         chi_g = (math.degrees(math.atan2(vx, vy)) + 360) % 360
         if not (17.72 <= chi_g <= 27.72): return False, None
 
-        # Cálculo da distância projetada no eixo da pista ajustado ao novo rumo (202.72º)
         dist_proj_nm = ((x - X_THR) * math.sin(math.radians(202.72)) + (y - Y_THR) * math.cos(math.radians(202.72))) / M_PARA_NM
         return True, {'altitude': h_real, 'distancia_proj': dist_proj_nm}
     except ValueError:
@@ -189,11 +200,12 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     
     cronograma_metar = carregar_cronograma_metar_em_segundos(caminho_metar, dia_alvo)
     tempos_metar = list(cronograma_metar.keys())
-    qnh_atual, temp_atual = process_metar(cronograma_metar[tempos_metar[0]]) if tempos_metar else (P_ISA, 15.0)
+    
+    qnh_atual, temp_atual, vento_atual = process_metar(cronograma_metar[tempos_metar[0]]) if tempos_metar else (P_ISA, 15.0, 0.0)
     indice_proximo_metar = 1 if len(tempos_metar) > 1 else 0
 
-    kf = FiltroKalman(R0_val=R0_val, Kw=Kw_val, Q_val=Q_val)
-    baseline = ModeloBaseline()
+    kf = FiltroKalman(vento_inicial_kt=vento_atual, R0_val=R0_val, Kw=Kw_val, Q_val=Q_val)
+    baseline = ModeloBaseline(vento_inicial_kt=vento_atual)
     
     historico_t = []
     observacoes_recentes = [] 
@@ -207,7 +219,7 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     snapshots_data = {h: {'kf': None, 'base': None, 'obs_alt': [], 'obs_wind': []} for h in alvos_horas}
 
     plt.ion()
-    fig_live, ax_live = plt.subplots(figsize=(8, 9))
+    fig_live, ax_live = plt.subplots(figsize=(10.5, 9))
     fig_live.canvas.manager.set_window_title('Real-Time Model Comparison')
     
     scatter_obs = ax_live.scatter([], [], color='dodgerblue', s=15, alpha=0.5, label='Recent Raw Observations (15 mins)')
@@ -223,7 +235,9 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     ax_live.set_xlabel("Calculated Headwind (kt)")
     ax_live.set_ylabel("True Altitude (ft)")
     ax_live.grid(True, linestyle='--', alpha=0.6)
-    ax_live.legend(loc='lower left')
+    
+    ax_live.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
+    plt.subplots_adjust(right=0.75)
     
     caixa_tempo = ax_live.text(0.05, 0.95, '', transform=ax_live.transAxes, fontsize=11,
                               verticalalignment='top', 
@@ -302,12 +316,14 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
                     if min_wind < ax_live.get_xlim()[0] or max_wind > ax_live.get_xlim()[1]:
                         ax_live.set_xlim(min_wind - 5, max_wind + 5)
                 
-                caixa_tempo.set_text(f"Virtual Time: {formatar_tempo(t_sim)}\nMETAR Temp: {temp_atual}ºC")
+                caixa_tempo.set_text(f"Virtual Time: {formatar_tempo(t_sim)}\nMETAR Temp: {temp_atual}ºC\nSfc Wind: {vento_atual:.1f} kt")
                 plt.pause(0.01)
 
             tempo_do_dia = t_sim % 86400
             if indice_proximo_metar < len(tempos_metar) and tempo_do_dia >= tempos_metar[indice_proximo_metar]:
-                qnh_atual, temp_atual = process_metar(cronograma_metar[tempos_metar[indice_proximo_metar]])
+                qnh_atual, temp_atual, vento_atual = process_metar(cronograma_metar[tempos_metar[indice_proximo_metar]])
+                kf.update_vento_superficie(vento_atual)
+                baseline.update_vento_superficie(vento_atual)
                 indice_proximo_metar += 1
 
             t_sim += 1
@@ -351,7 +367,7 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
 
     for h in alvos_horas:
         if snapshots_data[h]['kf'] is not None:
-            fig_snap, ax_snap = plt.subplots(figsize=(7, 8))
+            fig_snap, ax_snap = plt.subplots(figsize=(10, 8))
             fig_snap.canvas.manager.set_window_title(f'Snapshot at T = {h} Hour(s)')
             
             ax_snap.plot(snapshots_data[h]['kf'], kf.bins, color='red', linewidth=2.5, label='Kalman Filter Profile')
@@ -368,23 +384,38 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
             ax_snap.set_xlabel("Calculated Headwind (kt)")
             ax_snap.set_ylabel("True Altitude (ft)")
             ax_snap.grid(True, linestyle='--', alpha=0.6)
-            ax_snap.legend(loc='lower left')
+            
+            ax_snap.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
+            fig_snap.subplots_adjust(right=0.7)
             
             plt.show(block=False)
 
-    fig_final, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7))
-    fig_final.canvas.manager.set_window_title('Final Model Statistics')
+    # ---------------------------------------------------------
+    # PRIMEIRA JANELA FINAL: EVOLUÇÃO TEMPORAL
+    # ---------------------------------------------------------
+    fig_time, ax_time = plt.subplots(figsize=(11, 7))
+    fig_time.canvas.manager.set_window_title('Temporal Evolution of the Column Mean Headwind')
 
-    ax1.plot(horas_relativas, media_coluna_temporal_kf, color='red', linewidth=2, label='Kalman Filter Column Mean')
-    ax1.plot(horas_relativas, media_coluna_temporal_base, color='green', linestyle='--', linewidth=1.5, alpha=0.8, label='Baseline Column Mean')
-    ax1.set_title("Temporal Evolution of the Column Mean Headwind", fontweight='bold')
-    ax1.set_xlabel("Elapsed Time (hours)")
-    ax1.set_ylabel("Mean Column Headwind (kt)")
-    ax1.grid(True, linestyle='--', alpha=0.6)
-    ax1.legend(loc='upper right')
+    ax_time.plot(horas_relativas, media_coluna_temporal_kf, color='red', linewidth=2, label='Kalman Filter Column Mean')
+    ax_time.plot(horas_relativas, media_coluna_temporal_base, color='green', linestyle='--', linewidth=1.5, alpha=0.8, label='Baseline Column Mean')
+    
+    ax_time.set_title("Temporal Evolution of the Column Mean Headwind", fontweight='bold')
+    ax_time.set_xlabel("Elapsed Time (hours)")
+    ax_time.set_ylabel("Mean Column Headwind (kt)")
+    ax_time.grid(True, linestyle='--', alpha=0.6)
+    
+    # Legenda fora do gráfico
+    ax_time.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
+    fig_time.subplots_adjust(right=0.7)
+
+    # ---------------------------------------------------------
+    # SEGUNDA JANELA FINAL: DISTRIBUIÇÃO DE ERROS (BOXPLOTS)
+    # ---------------------------------------------------------
+    fig_box, ax_box = plt.subplots(figsize=(9, 7))
+    fig_box.canvas.manager.set_window_title('Residual Error Distribution Comparison')
 
     box_data = [erros_kf_np, erros_base_np]
-    bp = ax2.boxplot(box_data, vert=True, patch_artist=True, labels=['Kalman Filter', 'Baseline Model'])
+    bp = ax_box.boxplot(box_data, vert=True, patch_artist=True, labels=['Kalman Filter', 'Baseline Model'])
     
     colors = ['lightcoral', 'lightgreen']
     for patch, color in zip(bp['boxes'], colors):
@@ -393,17 +424,23 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     for median in bp['medians']:
         median.set(color='black', linewidth=1.5)
 
-    ax2.axhline(y=0, color='red', linestyle='--', alpha=0.7, label='Zero Error Reference')
-    ax2.set_title("Residual Error Distribution Comparison", fontweight='bold')
-    ax2.set_ylabel("Estimation Error (kt)")
+    ax_box.axhline(y=0, color='red', linestyle='--', alpha=0.7, label='Zero Error Reference')
+    ax_box.set_title("Residual Error Distribution Comparison", fontweight='bold')
+    ax_box.set_ylabel("Estimation Error (kt)")
     
-    ax2.text(1, ax2.get_ylim()[0] * 0.95, f"RMSE: {rmse_kf:.2f}\nMAE: {mae_kf:.2f}", ha='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.6))
-    ax2.text(2, ax2.get_ylim()[0] * 0.95, f"RMSE: {rmse_base:.2f}\nMAE: {mae_base:.2f}", ha='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.6))
+    # Anotações para o RMSE e MAE calculados
+    ax_box.text(1, ax_box.get_ylim()[0] * 0.95, f"RMSE: {rmse_kf:.2f}\nMAE: {mae_kf:.2f}", ha='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.6))
+    ax_box.text(2, ax_box.get_ylim()[0] * 0.95, f"RMSE: {rmse_base:.2f}\nMAE: {mae_base:.2f}", ha='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.6))
     
-    ax2.grid(True, linestyle='--', alpha=0.6)
-    ax2.legend(loc='upper right')
+    ax_box.grid(True, linestyle='--', alpha=0.6)
+    
+    # Legenda fora do gráfico
+    ax_box.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
+    fig_box.subplots_adjust(right=0.7)
 
-    plt.tight_layout()
+    # Otimização final do layout e chamada para manter os gráficos visíveis
+    fig_time.tight_layout()
+    fig_box.tight_layout()
     plt.show(block=True)
 
 if __name__ == "__main__":
@@ -414,7 +451,6 @@ if __name__ == "__main__":
     # AFINAÇÃO DOS PARÂMETROS
     Kw_teste = 1 
     R0_teste = 34.0  
-
     Q_teste = 0.03 
     
     run_and_visualise(nome_do_ficheiro_csv, nome_do_ficheiro_metar, dia_alvo, Kw_teste, Q_teste, R0_teste)
