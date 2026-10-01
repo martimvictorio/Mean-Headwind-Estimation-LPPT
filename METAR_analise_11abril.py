@@ -22,7 +22,7 @@ def analyse_lppt_wind_combined(
     # -------------------------------------------------------------
     # 1. Parâmetros operacionais e Preparação
     # -------------------------------------------------------------
-    runway_bearing = 25  # Rumo magnético da RWY 02 de LPPT (025°)
+    runway_bearing = 22.72  # True bearing da RWY 02 de LPPT (025°)
     wind_data = []       # Lista que armazenará os dados validados
 
     if not os.path.exists(file_name):
@@ -168,13 +168,11 @@ def analyse_lppt_wind_combined(
     }
     month_str = month_names.get(target_month, str(target_month))
 
-    plt.title(
-        f"Surface Wind Components from {start_day} to {end_day} {month_str} "
-        f"({start_hour:02d}:00 - {end_hour:02d}:00 UTC) [LPPT - RWY 02]",
-        fontsize=14, fontweight="bold"
-    )
+   
     plt.xlabel("Date & Time (UTC)", fontsize=12)
     plt.ylabel("Wind Component Speed (kt)", fontsize=12)
+
+    plt.ylim(-1, 25)
 
     plt.gca().xaxis.set_major_formatter(date_formatter)
     plt.gca().xaxis.set_major_locator(major_locator)
