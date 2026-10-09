@@ -224,6 +224,12 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     observacoes_recentes = [] 
     historico_perfis_kf = []
     historico_perfis_base = []
+    
+    # ---------------------------------------------------------
+    # Lista para gravar a evolução do vento à superfície
+    # ---------------------------------------------------------
+    historico_vento_superficie = []
+    
     erros_kf = []
     erros_base = []
     total_pontos = 0
@@ -293,7 +299,12 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
                             vento_pred_base = baseline.estimar_vento_altitude(alt_ft)
                             total_pontos += 1
                             
-                            if total_pontos > 20:
+                            # ==========================================
+                            # IMPLEMENTAÇÃO DO WARM-UP TEMPORAL 
+                            # O erro só é calculado 15 minutos (900 seg) 
+                            # após o início da simulação.
+                            # ==========================================
+                            if (t_sim - t_start_sim) >= 900:
                                 erros_kf.append(vento_pred_kf - headwind_kt)
                                 erros_base.append(vento_pred_base - headwind_kt)
 
@@ -317,6 +328,11 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
                 historico_t.append(t_sim)
                 historico_perfis_kf.append(np.copy(kf.x))
                 historico_perfis_base.append(np.copy(baseline.x))
+                
+                # ---------------------------------------------------------
+                # Gravar o valor instantâneo do vento à superfície
+                # ---------------------------------------------------------
+                historico_vento_superficie.append(vento_atual)
             
             if t_sim % 60 == 0:
                 line_kf.set_data(kf.x, kf.bins)
@@ -368,7 +384,8 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     print("\n" + "="*60)
     print("MODEL COMPARISON EVALUATION")
     print("="*60)
-    print(f"Total Valid Observations Evaluated : {len(erros_kf_np)}")
+    print(f"Total Valid Observations Found: {total_pontos}")
+    print(f"Total Valid Observations Evaluated (Post Warm-up): {len(erros_kf_np)}")
     print("------------------------------------------------------------")
     print("KALMAN FILTER:")
     print(f"  RMSE : {rmse_kf:.2f} kt")
@@ -413,6 +430,11 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     ax_time.plot(horas_relativas, media_coluna_temporal_kf, color='red', linewidth=2, label='Kalman Filter Column Mean')
     ax_time.plot(horas_relativas, media_coluna_temporal_base, color='green', linestyle='--', linewidth=1.5, alpha=0.8, label='Baseline Column Mean')
     
+    # ---------------------------------------------------------
+    # Desenhar a terceira linha referente ao vento de superfície
+    # ---------------------------------------------------------
+    ax_time.plot(horas_relativas, historico_vento_superficie, color='blue', linestyle='-.', linewidth=1.5, alpha=0.8, label='Surface Headwind')
+    
     ax_time.set_title("Temporal Evolution of the Column Mean Headwind", fontweight='bold')
     ax_time.set_xlabel("Elapsed Time (hours)")
     ax_time.set_ylabel("Mean Column Headwind (kt)")
@@ -454,14 +476,25 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     plt.show(block=True)
 
 if __name__ == "__main__":
-    # NOVOS FICHEIROS DE ENTRADA CONFIGURADOS AQUI
+    # ==========================================
+    # NOVOS FICHEIROS DE ENTRADA E PARÂMETROS CONFIGURADOS AQUI
+    # Adaptação para o cenário de 11 de abril (16h-20h)
+    # ==========================================
     nome_do_ficheiro_csv = "dados_11abril_16h20h.csv" 
-    nome_do_ficheiro_metar = "METAR_abril.txt"
-    dia_alvo = "11" # Passa a procurar o padrão "11" nos dias do relatório METAR
+    
+    # O ficheiro METAR precisa de refletir o mês de abril.
+    nome_do_ficheiro_metar = "METAR_abril.txt" 
+    
+    dia_alvo = "11" # Procura o padrão "11" nos dias do relatório METAR de Abril
     
     # AFINAÇÃO DOS PARÂMETROS
     Kw_teste = 1 
     R0_teste = 34.0  
-    Q_teste = 1 
+    
+    # O valor de Q foi ajustado para 0.05.
+    # Ao contrário do dia de 16 de março (Low Headwind), o dia 11 de abril caracteriza-se
+    # por "High Headwind" e ventos cruzados intensos, exigindo uma maior adaptabilidade 
+    # e rapidez do filtro face às observações voláteis.
+    Q_teste = 0.5
     
     run_and_visualise(nome_do_ficheiro_csv, nome_do_ficheiro_metar, dia_alvo, Kw_teste, Q_teste, R0_teste)

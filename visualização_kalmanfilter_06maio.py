@@ -161,7 +161,7 @@ def convert_to_seconds(msg):
     return float(tod_str) if len(partes) != 2 else (float(partes[0]) * 60) + float(partes[1])
 
 def message_meets_requirements(msg, qnh_local, temp_local_celsius):
-    # Verifica se a mensagem respeita os limites espaciais da aproximação final (Tese: Capítulo 3.2.1)
+    # Verifica se a mensagem respeita os limites espaciais da aproximação final
     try:
         campos = ['x', 'y', 'baroH', 'vx', 'vy', 'trkNr']
         if any(not msg.get(c) or str(msg[c]).strip() == '' for c in campos): return False, None
@@ -189,7 +189,7 @@ def message_meets_requirements(msg, qnh_local, temp_local_celsius):
         return False, None
 
 def calcular_vento_local(msg, temp_local_celsius):
-    # Deriva a observação de vento subtraindo a ground speed à true airspeed (Tese: Capítulo 3.2.2)
+    # Deriva a observação de vento subtraindo a ground speed à true airspeed
     try:
         if not msg.get('iar') or str(msg['iar']).strip() == '': return None
         iar_kt, vx, vy, baroH = float(msg['iar']), float(msg['vx']), float(msg['vy']), float(msg['baroH'])
@@ -224,6 +224,12 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     observacoes_recentes = [] 
     historico_perfis_kf = []
     historico_perfis_base = []
+    
+    # ---------------------------------------------------------
+    # NOVO: Lista para gravar a evolução do vento à superfície
+    # ---------------------------------------------------------
+    historico_vento_superficie = []
+    
     erros_kf = []
     erros_base = []
     total_pontos = 0
@@ -293,7 +299,7 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
                             vento_pred_base = baseline.estimar_vento_altitude(alt_ft)
                             total_pontos += 1
                             
-                            if total_pontos > 20:
+                            if (t_sim - t_start_sim) >= 900:
                                 erros_kf.append(vento_pred_kf - headwind_kt)
                                 erros_base.append(vento_pred_base - headwind_kt)
 
@@ -317,6 +323,11 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
                 historico_t.append(t_sim)
                 historico_perfis_kf.append(np.copy(kf.x))
                 historico_perfis_base.append(np.copy(baseline.x))
+                
+                # ---------------------------------------------------------
+                # NOVO: Gravar o valor instantâneo do vento à superfície
+                # ---------------------------------------------------------
+                historico_vento_superficie.append(vento_atual)
             
             if t_sim % 60 == 0:
                 line_kf.set_data(kf.x, kf.bins)
@@ -368,7 +379,8 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
     print("\n" + "="*60)
     print("MODEL COMPARISON EVALUATION")
     print("="*60)
-    print(f"Total Valid Observations Evaluated : {len(erros_kf_np)}")
+    print(f"Total Valid Observations Found: {total_pontos}")
+    print(f"Total Valid Observations Evaluated (Post Warm-up): {len(erros_kf_np)}")
     print("------------------------------------------------------------")
     print("KALMAN FILTER:")
     print(f"  RMSE : {rmse_kf:.2f} kt")
@@ -412,6 +424,11 @@ def run_and_visualise(caminho_csv, caminho_metar, dia_alvo, Kw_val, Q_val, R0_va
 
     ax_time.plot(horas_relativas, media_coluna_temporal_kf, color='red', linewidth=2, label='Kalman Filter Column Mean')
     ax_time.plot(horas_relativas, media_coluna_temporal_base, color='green', linestyle='--', linewidth=1.5, alpha=0.8, label='Baseline Column Mean')
+    
+    # ---------------------------------------------------------
+    # NOVO: Desenhar a terceira linha referente ao vento de superfície
+    # ---------------------------------------------------------
+    ax_time.plot(horas_relativas, historico_vento_superficie, color='blue', linestyle='-.', linewidth=1.5, alpha=0.8, label='Surface Headwind')
     
     ax_time.set_title("Temporal Evolution of the Column Mean Headwind", fontweight='bold')
     ax_time.set_xlabel("Elapsed Time (hours)")
