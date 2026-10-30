@@ -23,7 +23,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import estilo_figuras as ef
-import kalman_tuning_1julho as kt
+import resultados_4_4_1_q_tuning as kt
 
 # =============================================================================
 # CONFIGURAÇÃO DA VISUALIZAÇÃO
