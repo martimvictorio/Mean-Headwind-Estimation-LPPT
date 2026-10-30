@@ -29,9 +29,6 @@ Saídas em --out:
   headwind_medio_cenarios.png        os quatro cenários numa figura 2×2;
   config_usada.json                  configuração, x0 de cada cenário e versões.
 
-Alteração de 29-10-2026: instantes, eixos e colunas em UTC ('tod' é UTC); removida a
-conversão para hora local (k_j_local -> k_j_utc).
-
 Uso:
   python resultados_5_3.py --data-dir <pasta com CSV, METAR e IPMA>
   python resultados_5_3.py --scenarios 11abril

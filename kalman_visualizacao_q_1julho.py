@@ -12,9 +12,6 @@ Reutiliza o pré-processamento, a conversão de tempo e o filtro de
 'kalman_tuning_1julho.py', que tem de estar na mesma pasta. A configuração vem do
 mesmo CONFIG, sem alterações, pelo que o filtro é o mesmo da afinação de q.
 
-Alteração de 29-10-2026: instantes e eixos em UTC ('tod' é UTC); removida a conversão
-para hora local (estilo_figuras.to_local_clock deixou de existir).
-
 Uso:
   python kalman_visualizacao_q_1julho.py --csv dados_1julho_12h16h.csv --metar METAR_julho.txt
 """

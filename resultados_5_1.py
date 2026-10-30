@@ -41,8 +41,6 @@ Saídas em --out: tabela_5_1.csv, tabela_vento_duracao_5_1.csv, vento_local_por_
 nível), vento_local_dispersao.csv (resumo por cenário), vento_local_por_cenario.png e
 config_usada.json (configuração e versões).
 
-Alteração de 29-10-2026: período em UTC (period_local -> period_utc); 'tod' é UTC.
-
 Uso:
   python resultados_5_1.py --data-dir <pasta com CSV, METAR e IPMA>
   python resultados_5_1.py --scenarios 11abril 29marco

@@ -11,10 +11,6 @@ Data assumptions (verified against LPPT METAR):
   - Speed in m/s, direction in degrees (true, "wind from"), 1..360
 Scenario windows are given in UTC, as in the ASTERIX data ('tod', I062/070, is UTC).
 
-Change of 29-10-2026: the windows were previously treated as local time and converted
-to UTC (Europe/Lisbon), which shifted them 1 h earlier than the aircraft data on the
-UTC+1 days (29 March, 11 April, 6 May). No time zone conversion is done any more.
-
 Method:
   1. Headwind and crosswind are computed for each sensor separately (Eqs. 3.1-3.2).
   2. Each 3A sample is paired with the nearest 3B sample (|dt| <= 2 s).

@@ -31,13 +31,6 @@ quando uma observação entra (passo ceil(t_m)) ou sai (passo ceil(t_m + 600)). 
 a estimativa é constante, pelo que o resultado é exatamente igual a recalcular a cada 1 s.
 O teste de sanidade 6 verifica esta equivalência contra uma implementação passo a passo.
 
-Decisões em aberto (não definidas na tese):
-  - Eq. 3.33 aplicada numa única passagem (sem iterar), e N contado DEPOIS da rejeição.
-  - Limiar de 10 m/s com '≤' (aceita).
-  - Rejeições por nível: uma observação conta como rejeitada se for excluída pela Eq. 3.33
-    em pelo menos um passo enquanto está na janela (a média do nível muda com a janela, pelo
-    que a mesma observação pode ser aceite num passo e rejeitada noutro).
-
 Uso:
   python baseline_1julho.py --csv dados_1julho_12h16h.csv --metar METAR_julho.txt
   python baseline_1julho.py --selftest

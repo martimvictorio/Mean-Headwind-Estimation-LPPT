@@ -15,28 +15,6 @@ exceto:
   - surface_headwind_kt lança erro com vento VRB ou em falta, em vez de devolver 0 kt
     (decisão de 21-10-2026: o caso não ocorre nos cenários e não está definido na tese).
 
-Alterações de 29-10-2026 (identificação das aeronaves pelo endereço Mode S, T §3.2.1 e §3.5):
-  - Critério 1 exige 'modeS' válido em vez de 'trkNr'. O track number do ARTAS muda quando
-    o track é reiniciado (a mesma aeronave chega a ter 11 track numbers no 1 de julho), por
-    isso não identifica aeronaves.
-  - A chave da aeronave (Observation.mode_s, antes track_key = "modeS|trkNr") passa a ser só
-    o endereço Mode S. As passagens separam-se apenas pelo intervalo > passage_gap_s.
-  - Observation.track_key mantém-se como propriedade só de leitura (devolve mode_s), para
-    não partir scripts que a leiam. Já não contém o trkNr: código que faça split('|')
-    tem de ser atualizado.
-  Verificado nos 5 ficheiros (1 julho e cenários 1-4): mesmas mensagens aceites e mesmo
-  número de passagens que a versão anterior (77, 74, 72, 69, 78).
-
-Alterações de 29-10-2026 (referência temporal):
-  - 'tod' (I062/070, Time Of Track Information) está em UTC, como define a norma ASTERIX
-    CAT062, e não em hora legal de Lisboa como se assumia. A conversão hora local -> UTC
-    foi removida: t_utc = tod. Com a conversão, nos dias em UTC+1 (todos menos 16 de
-    março) as mensagens ficavam 1 h antes do instante real, pelo que o METAR usado na
-    correção de altitude (Eq. 3.9) e na TAS, o x0 do IPMA e o benchmark METAR vinham
-    de 1 h antes. Em 16 de março (UTC+0) nada muda.
-  - Removidas lisbon_offset_h, local_tod_to_utc_s, lisbon_offset_h_at e
-    utc_s_to_local_s (deixaram de ser usadas; mantê-las convidava a reintroduzir o erro).
-
 Referência temporal:
   - 'tod' do CSV, METAR e anemómetros IPMA estão todos em UTC. Não há conversões.
 """

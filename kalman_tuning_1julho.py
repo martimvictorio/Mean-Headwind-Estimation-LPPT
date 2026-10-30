@@ -13,24 +13,6 @@ O que este script faz:
   4. Varrimento de q e tabela de RMSE / MAE / bias.
   5. No fim, rejeições do gate (Eq. 3.20) por nível e no total, na corrida completa.
 
-Alterações de 21-10-2026:
-  - O pré-processamento (tempo, METAR, física, critérios, passagens) saiu deste ficheiro
-    para 'preprocessamento.py', sem alterações de lógica. Os nomes continuam acessíveis
-    como kt.<nome> para 'baseline_1julho.py' e 'kalman_visualizacao_q_1julho.py'.
-  - sweep_q passou a devolver (results, gated_by_q); antes não tinha return e main()
-    falhava ao desempacotar.
-  - A grelha de altitude (AltitudeGrid e parâmetros) passou para 'cenarios.py', sem
-    alterações, porque também é usada na avaliação (Eqs. 3.32, 3.35) e nas figuras.
-  - O filtro (AdaptedKalmanFilter, run_filter) e os seus parâmetros passaram para
-    'modelos.py', e a avaliação (referência, nowcast, operacional, métricas) para
-    'avaliacao.py', sem alterações de lógica: a afinação usa assim exatamente o mesmo
-    código de avaliação que os resultados do Cap. 5.
-
-Alteração de 29-10-2026: 'tod' passou a ser lido como UTC (preprocessamento.py). O início
-da simulação é 12:00 UTC (antes 11:00 UTC) e x0 vem do METAR das 12:00Z (antes 11:00Z).
-Removidos da reexportação lisbon_offset_h, local_tod_to_utc_s, lisbon_offset_h_at e
-utc_s_to_local_s, que deixaram de existir.
-
 Vento à superfície:
   - Entra apenas no estado inicial x0 (T §4.3.2).
   - Neste cenário vem do METAR porque não há dados IPMA para 1 de julho.
